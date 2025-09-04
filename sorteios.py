@@ -1,5 +1,3 @@
-# -*- coding: utf-8 -*-
-
 # Imports
 import discord
 from discord.ext import commands, tasks
@@ -470,3 +468,4 @@ class GiveawaysCog(commands.Cog):
 
 async def setup(bot):
     await bot.add_cog(GiveawaysCog(bot))
+
