@@ -21,3 +21,8 @@ Este repositório reúne uma coleção de **cogs para bots de Discord desenvolvi
 Sistema completo de sorteios com comando `/sorteio` e botões interativos. Suporta múltiplos ganhadores, requisito de convites, agendamento automático e persistência após reinicialização do bot. Integração com MySQL para armazenamento e sistema de fallback para sorteios perdidos.
 
 **Funcionalidades:** Interface com embeds coloridos, seleção aleatória de vencedores, views persistentes, sistema de permissões flexível e configurações totalmente personalizáveis.
+
+### 🎫 **Sistema de Tickets** (`tickets.py`)
+Sistema completo de atendimento ao cliente através de tickets privados. Permite abertura de canais individuais organizados por categorias, com controle de permissões por cargos, estados de ticket (aberto/resolvido/excluído) e integração com banco MySQL.
+
+**Funcionalidades:** Interface com dropdown de categorias (Geral, Denúncias, Financeiro, Outros), botões persistentes para fechar/excluir tickets, sistema de numeração sequencial, movimentação automática entre categorias, controle de permissões granular e configuração via comando `/setup`. Suporta reativação automática de tickets após reinicialização do bot.
