@@ -15,7 +15,9 @@ Este repositório reúne uma coleção de **cogs para bots de Discord desenvolvi
 * Usar soluções prontas, mas flexíveis e facilmente configuráveis.  
 * Estudar a estrutura de cogs no `discord.py` para evoluir no desenvolvimento.
 
-## 🎁 Cogs Disponíveis
+## 🛠️ Cogs Disponíveis
+🎁 Sorteios (sorteios.py)
+Sistema completo de sorteio Cogs Disponíveis
 
 ### 🎁 **Sorteios** (`sorteios.py`)
 Sistema completo de sorteios com comando `/sorteio` e botões interativos. Suporta múltiplos ganhadores, requisito de convites, agendamento automático e persistência após reinicialização do bot. Integração com MySQL para armazenamento e sistema de fallback para sorteios perdidos.
