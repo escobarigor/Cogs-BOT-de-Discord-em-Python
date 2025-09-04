@@ -1,12 +1,14 @@
-# Imports
 import discord
-from discord.ext import commands, tasks
+from discord.ext import commands
+from discord import app_commands
 from discord.app_commands import command, describe, Range
-import aiomysql
-from datetime import datetime, timedelta
-import random
 import asyncio
+import aiomysql
+import aiomysql.cursors
+import random
 import logging
+from datetime import datetime, timedelta
+from discord.ext import tasks
 
 # ========================================================================
 # SISTEMA DE SORTEIOS - CONFIGURAÇÕES EDITÁVEIS
@@ -20,7 +22,21 @@ import logging
 #
 # ========================================================================
 
-# --- CONFIGURAÇÕES DO CANAL DE SORTEIOS ---
+# --- CONFIGURAÇÃO DO BANCO DE DADOS MYSQL ---
+# IMPORTANTE: Preencha com suas próprias credenciais do MySQL
+# Estas informações são necessárias para o funcionamento dos sorteios
+DB_CONFIG = {
+    "host": "",  # SUBSTITUA pelo endereço do seu servidor MySQL (ex: "localhost")
+    "user": "",  # SUBSTITUA pelo nome do usuário MySQL
+    "password": "",  # SUBSTITUA pela senha do usuário MySQL
+    "db": "",  # SUBSTITUA pelo nome do banco de dados
+    "autocommit": True,
+    "cursorclass": "DictCursor",
+    "minsize": 1,
+    "maxsize": 10
+}
+
+# --- CONFIGURAÇÕES DOS CANAIS ---
 # ID do canal onde os sorteios serão realizados
 # Para obter o ID: Clique com botão direito no canal > Copiar ID
 CANAL_SORTEIOS_ID = 0  # SUBSTITUA pelo ID do seu canal de sorteios
@@ -36,20 +52,6 @@ ALLOWED_GIVEAWAY_CREATOR_ROLES = [
     # Exemplo: 1234567890123456791,
 ]
 
-# --- CONFIGURAÇÕES DO BANCO DE DADOS MYSQL ---
-# IMPORTANTE: Preencha com suas próprias credenciais do MySQL
-# Estas informações são necessárias para o funcionamento dos sorteios
-DB_CONFIG = {
-    "host": "",  # SUBSTITUA pelo endereço do seu servidor MySQL (ex: "localhost")
-    "user": "",  # SUBSTITUA pelo nome do usuário MySQL
-    "password": "",  # SUBSTITUA pela senha do usuário MySQL
-    "db": "",  # SUBSTITUA pelo nome do banco de dados
-    "autocommit": True,
-    "cursorclass": "DictCursor",
-    "minsize": 1,
-    "maxsize": 10
-}
-
 # --- CONFIGURAÇÕES DE TEMPO ---
 # Tempo mínimo em minutos para um sorteio (não altere se não souber)
 TEMPO_MINIMO_SORTEIO = 1
@@ -64,8 +66,26 @@ MAX_GANHADORES_SORTEIO = 25
 # Número máximo de convites que podem ser exigidos
 MAX_CONVITES_NECESSARIOS = 100
 
-# --- MENSAGENS PERSONALIZADAS ---
+# --- CONFIGURAÇÕES DE MENSAGENS ---
 # Mensagens que aparecem para os usuários (mantenha as aspas duplas)
+
+# Título do sorteio
+TITULO_SORTEIO = "{emoji_presente} Sorteio de {premio} {emoji_presente}"
+
+# Descrição do sorteio
+DESCRICAO_SORTEIO = "Clique no botão **Participar** para concorrer!"
+
+# Título do sorteio finalizado com vencedores
+TITULO_SORTEIO_FINALIZADO = "{emoji_festa} Sorteio de {premio} FINALIZADO! {emoji_festa}"
+
+# Mensagem de vencedores
+MENSAGEM_VENCEDORES = "Parabéns aos ganhadores: {vencedores}!"
+
+# Título do sorteio sem participantes
+TITULO_SORTEIO_SEM_PARTICIPANTES = "❌ Sorteio de {premio} FINALIZADO! ❌"
+
+# Descrição quando não há participantes
+DESCRICAO_SEM_PARTICIPANTES = "Não houve participantes suficientes para este sorteio."
 
 # Mensagem quando alguém não tem permissão para criar sorteios
 MENSAGEM_SEM_PERMISSAO = "❌ Você não tem permissão para criar sorteios."
@@ -83,6 +103,45 @@ MENSAGEM_SORTEIO_CRIADO = "✅ Sorteio iniciado com sucesso em {canal}!"
 MENSAGEM_CONVITES_INSUFICIENTES = """❌ **Requisito não cumprido!**
 Este sorteio exige **{necessarios}** convites.
 Você tem atualmente **{atual}** convites."""
+
+# Mensagem de erro de configuração
+MENSAGEM_ERRO_CONFIGURACAO = "❌ Erro: Canal de sorteios não configurado. Contate um administrador."
+
+# Mensagem de erro de canal não encontrado
+MENSAGEM_CANAL_NAO_ENCONTRADO = "Erro: Canal de sorteios não encontrado."
+
+# Mensagem de serviço indisponível
+MENSAGEM_SERVICO_INDISPONIVEL = "Erro: Serviço de sorteios indisponível."
+
+# Mensagem de sorteio inativo
+MENSAGEM_SORTEIO_INATIVO = "Este sorteio não está mais ativo."
+
+# Mensagem de erro de verificação de convites
+MENSAGEM_ERRO_CONVITES = "Erro: Não foi possível verificar seus convites. Contate um admin."
+
+# Mensagem de erro de participação
+MENSAGEM_ERRO_PARTICIPACAO = "Ocorreu um erro ao processar sua participação."
+
+# --- CONFIGURAÇÕES DE LABELS ---
+# Textos dos campos e botões (mantenha as aspas duplas)
+
+# Label do campo de ganhadores
+LABEL_GANHADORES = "{emoji_trofeu} Ganhadores"
+
+# Label do campo de requisito
+LABEL_REQUISITO = "{emoji_ingresso} Requisito"
+
+# Label do campo de tempo
+LABEL_TEMPO = "{emoji_relogio} Termina em"
+
+# Label do botão de participar
+LABEL_BOTAO_PARTICIPAR = "Participar ({participantes})"
+
+# Texto do requisito de convites
+TEXTO_REQUISITO_CONVITES = "**{convites}** convites"
+
+# Texto do rodapé do sorteio
+TEXTO_RODAPE_SORTEIO = "Sorteio ID: {id}"
 
 # --- CONFIGURAÇÕES DE CORES ---
 # Cores dos embeds (use nomes em inglês ou códigos hex)
@@ -179,7 +238,6 @@ class GiveawayView(discord.ui.View):
                                 ),
                                 ephemeral=True
                             )
-                    # --- FIM DA VERIFICAÇÃO ---
 
                     # Verifica se já está participando
                     await cursor.execute("SELECT * FROM participantes WHERE sorteio_id = %s AND usuario_id = %s", (sorteio_db["id"], interaction.user.id))
@@ -192,7 +250,7 @@ class GiveawayView(discord.ui.View):
                     # Atualiza contagem no botão
                     await cursor.execute("SELECT COUNT(*) AS total FROM participantes WHERE sorteio_id = %s", (sorteio_db["id"],))
                     total_participantes = (await cursor.fetchone())["total"]
-                    button.label = f"Participar ({total_participantes})"
+                    button.label = LABEL_BOTAO_PARTICIPAR.format(participantes=total_participantes)
                     await interaction.message.edit(view=self)
 
                     await interaction.followup.send(MENSAGEM_PARTICIPACAO_SUCESSO, ephemeral=True)
@@ -330,7 +388,7 @@ class GiveawaysCog(commands.Cog):
 
         # Verifica se as configurações foram definidas
         if CANAL_SORTEIOS_ID == 0:
-            return await interaction.response.send_message("❌ Erro: Canal de sorteios não configurado. Contate um administrador.", ephemeral=True)
+            return await interaction.response.send_message(MENSAGEM_ERRO_CONFIGURACAO, ephemeral=True)
 
         # Verifica permissões: Administradores OU cargos específicos
         has_permission = False
@@ -347,7 +405,7 @@ class GiveawaysCog(commands.Cog):
 
         canal_sorteio = self.bot.get_channel(CANAL_SORTEIOS_ID)
         if not canal_sorteio:
-            return await interaction.response.send_message(f"Erro: Canal de sorteios não encontrado.", ephemeral=True)
+            return await interaction.response.send_message(MENSAGEM_CANAL_NAO_ENCONTRADO, ephemeral=True)
 
         await interaction.response.defer(ephemeral=True)
         data_fim = datetime.now() + timedelta(minutes=tempo_minutos)
@@ -363,17 +421,17 @@ class GiveawaysCog(commands.Cog):
             # Cria a view e o embed
             view = GiveawayView(self.bot, convites_necessarios=convites_necessarios)
             embed = discord.Embed(
-                title=f"{EMOJI_PRESENTE} Sorteio de {premio} {EMOJI_PRESENTE}",
-                description=f"Clique no botão **Participar** para concorrer!",
+                title=TITULO_SORTEIO.format(premio=premio, emoji_presente=EMOJI_PRESENTE),
+                description=DESCRICAO_SORTEIO,
                 color=getattr(discord.Color, COR_SORTEIO_ATIVO, discord.Color.gold)()
             )
-            embed.add_field(name=f"{EMOJI_TROFEU} Ganhadores", value=str(num_ganhadores), inline=True)
+            embed.add_field(name=LABEL_GANHADORES.format(emoji_trofeu=EMOJI_TROFEU), value=str(num_ganhadores), inline=True)
             # Adiciona o campo de requisito de convites se for maior que zero
             if convites_necessarios > 0:
-                embed.add_field(name=f"{EMOJI_INGRESSO} Requisito", value=f"**{convites_necessarios}** convites", inline=True)
+                embed.add_field(name=LABEL_REQUISITO.format(emoji_ingresso=EMOJI_INGRESSO), value=TEXTO_REQUISITO_CONVITES.format(convites=convites_necessarios), inline=True)
 
-            embed.add_field(name=f"{EMOJI_RELOGIO} Termina em", value=f"<t:{int(data_fim.timestamp())}:R>", inline=False)
-            embed.set_footer(text=f"Sorteio ID: {sorteio_id}")
+            embed.add_field(name=LABEL_TEMPO.format(emoji_relogio=EMOJI_RELOGIO), value=f"<t:{int(data_fim.timestamp())}:R>", inline=False)
+            embed.set_footer(text=TEXTO_RODAPE_SORTEIO.format(id=sorteio_id))
 
             message = await canal_sorteio.send(embed=embed, view=view)
 
@@ -384,12 +442,9 @@ class GiveawaysCog(commands.Cog):
 
             await interaction.followup.send(MENSAGEM_SORTEIO_CRIADO.format(canal=canal_sorteio.mention), ephemeral=True)
 
-            # AGORA, AGENDE A FINALIZAÇÃO PRECISA
-            self.bot.loop.create_task(self.schedule_giveaway_end(sorteio_id, data_fim))
-
         except Exception as e:
             logger.error(f"❌ ERRO ao criar sorteio: {e}", exc_info=True)
-            await interaction.followup.send(f"Ocorreu um erro ao processar sua participação.", ephemeral=True)
+            await interaction.followup.send(MENSAGEM_ERRO_PARTICIPACAO, ephemeral=True)
 
     @tasks.loop(minutes=1)
     async def check_for_ended_giveaways(self):
@@ -439,12 +494,13 @@ class GiveawaysCog(commands.Cog):
             mensagem_sorteio = await canal.fetch_message(sorteio["mensagem_id"])
             if mensagem_sorteio:
                 embed_final = discord.Embed(
-                    title=f"{EMOJI_FESTA} Sorteio de {sorteio['premio']} FINALIZADO! {EMOJI_FESTA}",
+                    title=TITULO_SORTEIO_FINALIZADO.format(premio=sorteio['premio'], emoji_festa=EMOJI_FESTA),
                     color=getattr(discord.Color, COR_SORTEIO_FINALIZADO, discord.Color.green)()
                 )
                 vencedores_mencoes = ", ".join([f"<@{v}>" for v in vencedores])
-                embed_final.description = f"Parabéns aos ganhadores: {vencedores_mencoes}!"
-                embed_final.set_footer(text=f"Sorteio ID: {sorteio_id}")
+                embed_final.description = MENSAGEM_VENCEDORES.format(vencedores=vencedores_mencoes)
+                embed_final.set_footer(text=TEXTO_RODAPE_SORTEIO.format(id=sorteio_id))
+
                 await mensagem_sorteio.edit(embed=embed_final, view=None) # Remove o botão
             else:
                 logger.warning(f"⚠️ Mensagem do sorteio {sorteio['mensagem_id']} não encontrada no canal {canal.id}.")
@@ -454,11 +510,12 @@ class GiveawaysCog(commands.Cog):
             mensagem_sorteio = await canal.fetch_message(sorteio["mensagem_id"])
             if mensagem_sorteio:
                 embed_final = discord.Embed(
-                    title=f"❌ Sorteio de {sorteio['premio']} FINALIZADO! ❌",
-                    description="Não houve participantes suficientes para este sorteio.",
+                    title=TITULO_SORTEIO_SEM_PARTICIPANTES.format(premio=sorteio['premio']),
+                    description=DESCRICAO_SEM_PARTICIPANTES,
                     color=getattr(discord.Color, COR_SORTEIO_SEM_PARTICIPANTES, discord.Color.red)()
                 )
-                embed_final.set_footer(text=f"Sorteio ID: {sorteio_id}")
+                embed_final.set_footer(text=TEXTO_RODAPE_SORTEIO.format(id=sorteio_id))
+
                 await mensagem_sorteio.edit(embed=embed_final, view=None) # Remove o botão
             else:
                 logger.warning(f"⚠️ Mensagem do sorteio {sorteio['mensagem_id']} não encontrada no canal {canal.id}.")
@@ -468,4 +525,3 @@ class GiveawaysCog(commands.Cog):
 
 async def setup(bot):
     await bot.add_cog(GiveawaysCog(bot))
-
